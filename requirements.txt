@@ -1,0 +1,8 @@
+pandas
+scikit-learn
+xgboost
+ortools
+streamlit
+folium
+plotly
+jupyter
