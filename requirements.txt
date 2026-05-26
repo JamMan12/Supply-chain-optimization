@@ -6,3 +6,6 @@ streamlit
 folium
 plotly
 jupyter
+matplotlib
+scipy
+seaborn

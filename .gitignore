@@ -31,7 +31,6 @@ models/*.ubj
 
 # Jupyter
 .ipynb_checkpoints/
-*.ipynb
 
 # Claude Code internal settings
 .claude/
