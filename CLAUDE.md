@@ -74,6 +74,15 @@ Primary dataset: **DataCo Smart Supply Chain** (Kaggle).
 
 ---
 
+## EDA Decisions — DataCo Dataset
+
+See [`src/supply_chain_opt/data/README.md`](src/supply_chain_opt/data/README.md) for the full
+set of decisions: data loading quirks, confirmed leakage columns, columns to drop, approved ML
+feature set, and CFLP input derivations. These decisions are binding — do not deviate from them
+when writing preprocessing or model code.
+
+---
+
 ## Mathematical Formulation — CFLP
 
 ### Sets
@@ -189,21 +198,7 @@ components.
 - Tailwind CSS for styling.
 - API layer isolated in `lib/api.ts`.
 
-### pyproject.toml tool config
-```toml
-[tool.black]
-line-length = 88
-
-[tool.isort]
-profile = "black"
-
-[tool.mypy]
-strict = true
-ignore_missing_imports = true
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-```
+Tool configuration for Black, isort, mypy, and pytest is in `pyproject.toml`.
 
 ---
 
