@@ -27,5 +27,23 @@ class Settings:
         default_factory=lambda: _PROJECT_ROOT / "data" / "processed" / "cflp_demand_nodes.parquet"
     )
 
+    # Facility clustering
+    cflp_n_facility_clusters: int = 20
+
+    # Problem parameters
+    cflp_max_open_facilities: int = 5
+    cflp_capacity_multiplier: float = 0.3
+    cflp_fixed_cost_per_facility: float = 1e9
+    cflp_cost_per_km: float = 1.0
+
+    # Solver engine
+    cflp_solver_backend: str = "CBC"
+    cflp_solver_time_limit_s: int = 60
+
+    # Output
+    cflp_results_path: Path = field(
+        default_factory=lambda: _PROJECT_ROOT / "data" / "processed" / "cflp_solution.json"
+    )
+
 
 settings = Settings()

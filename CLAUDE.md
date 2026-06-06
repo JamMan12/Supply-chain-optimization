@@ -81,6 +81,9 @@ set of decisions: data loading quirks, confirmed leakage columns, columns to dro
 feature set, and CFLP input derivations. These decisions are binding — do not deviate from them
 when writing preprocessing or model code.
 
+See [`assumptions.md`](assumptions.md) for all modeling assumptions (solver parameters, capacity
+formulas, centroid approximations) and the reasoning behind each. Updated at every phase.
+
 ---
 
 ## Mathematical Formulation — CFLP

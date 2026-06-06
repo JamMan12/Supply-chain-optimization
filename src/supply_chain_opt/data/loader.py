@@ -14,7 +14,7 @@ from supply_chain_opt.config import settings
 def load_raw() -> pd.DataFrame:
     """Load the raw DataCo CSV."""
     df = pd.read_csv(settings.raw_data_path, encoding="latin-1")
-    df.columns = df.columns.str.strip()
+    df.columns = df.columns.str.strip() #remove whitespace from column names
     return df
 
 
