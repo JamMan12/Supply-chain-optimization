@@ -5,7 +5,7 @@
 This is a portfolio project that builds a **resilient supply chain network optimizer** combining
 Machine Learning with Mixed-Integer Linear Programming (MILP). The core idea: train a binary
 delay classifier to predict shipment delay probabilities on each route, then feed those
-probabilities directly into an OR-Tools solver as risk-adjusted transportation costs. The
+probabilities directly into a PuLP/HiGHS solver as risk-adjusted transportation costs. The
 optimizer (a Capacitated Facility Location Problem) then naturally avoids high-risk lanes when
 selecting which facilities to open and how to route demand.
 
@@ -24,7 +24,7 @@ The project is developed in three phases:
 | Layer | Tool |
 |---|---|
 | Language | Python 3.11+ |
-| Solver | OR-Tools (CP-SAT or MILP via `ortools.linear_solver`) |
+| Solver | PuLP (algebraic modeling) + HiGHS (default backend) or CBC (fallback) |
 | ML | scikit-learn / XGBoost / LightGBM (binary classifier) |
 | API | FastAPI |
 | Frontend | React + Next.js |
@@ -43,7 +43,7 @@ SupplyChainOpt/
 │   └── supply_chain_opt/
 │       ├── data/            # DataLoader, preprocessing, feature pipeline
 │       ├── models/          # Delay classifier: train, evaluate, persist
-│       ├── optimizer/       # CFLP formulation, OR-Tools wrapper, cost builder
+│       ├── optimizer/       # CFLP formulation, PuLP/HiGHS solver, cost builder
 │       ├── api/             # FastAPI app, routers, request/response schemas
 │       └── config.py        # Pydantic Settings — all paths and hyperparams here
 ├── frontend/                # Next.js app (network map dashboard)
@@ -155,7 +155,7 @@ POST /solve
    `penalty_factor`).
 2. Loads the trained delay classifier and scores every route `(i, j)` → `P(delay_ij)`.
 3. Builds risk-adjusted cost matrix.
-4. Calls OR-Tools solver.
+4. Calls PuLP/HiGHS solver.
 5. Returns: open facilities, flow assignments, total cost, risk scores per route, solve time.
 
 **Supporting endpoints:**

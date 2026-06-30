@@ -12,7 +12,7 @@ SupplyChainOpt/
 ├── notebooks/          # Jupyter notebooks for exploration and analysis
 ├── src/
 │   ├── ml_pipeline/    # Feature engineering, model training, evaluation
-│   └── optimization/   # OR-Tools solvers and optimization logic
+│   └── optimization/   # PuLP/HiGHS solvers and optimization logic
 ├── app/                # Streamlit dashboard
 ├── requirements.txt
 └── README.md

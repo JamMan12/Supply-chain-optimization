@@ -9,19 +9,21 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 import numpy as np
-from ortools.linear_solver import pywraplp
+import pulp
 
 from supply_chain_opt.config import settings
 from supply_chain_opt.optimizer.cost_builder import CFLPData, build_problem_data
 
-_STATUS_MAP = {
-    pywraplp.Solver.OPTIMAL: "OPTIMAL",
-    pywraplp.Solver.FEASIBLE: "FEASIBLE",
-    pywraplp.Solver.INFEASIBLE: "INFEASIBLE",
-    pywraplp.Solver.UNBOUNDED: "UNBOUNDED",
-    pywraplp.Solver.ABNORMAL: "ABNORMAL",
-    pywraplp.Solver.NOT_SOLVED: "NOT_SOLVED",
+# Keyed on prob.sol_status, which distinguishes optimal vs feasible (time-limited).
+_SOL_STATUS_MAP = {
+    1: "OPTIMAL",
+    2: "FEASIBLE",
+    0: "NOT_SOLVED",
+    -1: "INFEASIBLE",
+    -2: "UNBOUNDED",
 }
+
+_HAS_SOLUTION = {1, 2}
 
 
 @dataclass
@@ -34,104 +36,86 @@ class SolveResult:
     n_facilities_open: int
 
 
-def _build_variables(
-    solver: pywraplp.Solver,
-    n_facilities: int,
-    n_demand: int,
-) -> tuple[list[pywraplp.Variable], list[list[pywraplp.Variable]]]:
-    y = [solver.BoolVar(f"y_{i}") for i in range(n_facilities)]
-    x = [
-        [solver.NumVar(0.0, 1.0, f"x_{i}_{j}") for j in range(n_demand)]
-        for i in range(n_facilities)
-    ]
-    return y, x
-
-
-def _extract_solution(
-    y: list[pywraplp.Variable],
-    x: list[list[pywraplp.Variable]],
-    n_facilities: int,
-    n_demand: int,
-    status_int: int,
-    objective_value: float,
-    solve_time_s: float,
-) -> SolveResult:
-    status = _STATUS_MAP.get(status_int, "UNKNOWN")
-
-    if status_int in (pywraplp.Solver.OPTIMAL, pywraplp.Solver.FEASIBLE):
-        open_facilities = [i for i in range(n_facilities) if y[i].solution_value() > 0.5]
-        assignments = np.array(
-            [[x[i][j].solution_value() for j in range(n_demand)] for i in range(n_facilities)]
-        )
-    else:
-        open_facilities = []
-        assignments = np.zeros((n_facilities, n_demand))
-
-    return SolveResult(
-        status=status,
-        objective_value=objective_value,
-        open_facilities=open_facilities,
-        assignments=assignments,
-        solve_time_s=solve_time_s,
-        n_facilities_open=len(open_facilities),
-    )
+def _get_solver(backend: str, time_limit_s: int) -> pulp.LpSolver:
+    if backend.upper() == "HIGHS":
+        return pulp.HiGHS(msg=0, timeLimit=time_limit_s)
+    return pulp.PULP_CBC_CMD(msg=0, timeLimit=time_limit_s)
 
 
 def solve_cflp(
     data: CFLPData,
     max_open_facilities: int,
     cost_per_km: float,
-    solver_backend: str = "CBC",
+    solver_backend: str = "HIGHS",
     time_limit_s: int = 60,
 ) -> SolveResult:
-    """Solve the CFLP as a MILP using OR-Tools.
+    """Solve the CFLP as a MILP using PuLP.
 
     Minimizes total transport cost + fixed facility costs subject to demand
     satisfaction, capacity, and a cap on the number of open facilities.
     """
-    solver = pywraplp.Solver.CreateSolver(solver_backend)
-    solver.SetTimeLimit(time_limit_s * 1000)
-
     n_fac = data.n_facilities
     n_dem = data.n_demand
-    y, x = _build_variables(solver, n_fac, n_dem)
+
+    prob = pulp.LpProblem("cflp", pulp.LpMinimize)
+
+    y = [pulp.LpVariable(f"y_{i}", cat="Binary") for i in range(n_fac)]
+    x = [
+        [pulp.LpVariable(f"x_{i}_{j}", lowBound=0, upBound=1) for j in range(n_dem)]
+        for i in range(n_fac)
+    ]
 
     # Objective: transport cost + fixed opening cost
-    objective = solver.Objective()
-    for i in range(n_fac):
-        objective.SetCoefficient(y[i], data.fixed_costs[i])
-        for j in range(n_dem):
-            coeff = cost_per_km * data.cost_matrix[i, j] * data.demands[j]
-            objective.SetCoefficient(x[i][j], coeff)
-    objective.SetMinimization()
+    prob += (
+        pulp.lpSum(data.fixed_costs[i] * y[i] for i in range(n_fac))
+        + pulp.lpSum(
+            cost_per_km * data.cost_matrix[i, j] * data.demands[j] * x[i][j]
+            for i in range(n_fac)
+            for j in range(n_dem)
+        )
+    )
 
-    # Demand satisfaction: sum_i x_ij = 1 for each j
+    # Demand satisfaction: sum_i x_ij == 1 for each j
     for j in range(n_dem):
-        ct = solver.Constraint(1.0, 1.0)
-        for i in range(n_fac):
-            ct.SetCoefficient(x[i][j], 1.0)
+        prob += pulp.lpSum(x[i][j] for i in range(n_fac)) == 1
 
-    # Capacity (linearized): sum_j x_ij * d_j - C_i * y_i <= 0 for each i
+    # Capacity: sum_j x_ij * d_j <= C_i * y_i for each i
     for i in range(n_fac):
-        ct = solver.Constraint(-solver.infinity(), 0.0)
-        for j in range(n_dem):
-            ct.SetCoefficient(x[i][j], data.demands[j])
-        ct.SetCoefficient(y[i], -data.capacities[i])
+        prob += (
+            pulp.lpSum(x[i][j] * data.demands[j] for j in range(n_dem))
+            <= data.capacities[i] * y[i]
+        )
 
     # Facility cap: sum_i y_i <= K
-    cap_ct = solver.Constraint(-solver.infinity(), float(max_open_facilities))
-    for i in range(n_fac):
-        cap_ct.SetCoefficient(y[i], 1.0)
+    prob += pulp.lpSum(y[i] for i in range(n_fac)) <= max_open_facilities
 
+    solver = _get_solver(solver_backend, time_limit_s)
     t0 = time.perf_counter()
-    status_int = solver.Solve()
+    prob.solve(solver)
     solve_time_s = time.perf_counter() - t0
 
-    obj_val = solver.Objective().Value() if status_int in (
-        pywraplp.Solver.OPTIMAL, pywraplp.Solver.FEASIBLE
-    ) else float("nan")
+    status_str = _SOL_STATUS_MAP.get(prob.sol_status, "UNKNOWN")
+    has_solution = prob.sol_status in _HAS_SOLUTION
 
-    return _extract_solution(y, x, n_fac, n_dem, status_int, obj_val, solve_time_s)
+    if has_solution:
+        open_facilities = [i for i in range(n_fac) if pulp.value(y[i]) > 0.5]
+        assignments = np.array(
+            [[pulp.value(x[i][j]) for j in range(n_dem)] for i in range(n_fac)]
+        )
+        obj_val = pulp.value(prob.objective)
+    else:
+        open_facilities = []
+        assignments = np.zeros((n_fac, n_dem))
+        obj_val = float("nan")
+
+    return SolveResult(
+        status=status_str,
+        objective_value=obj_val,
+        open_facilities=open_facilities,
+        assignments=assignments,
+        solve_time_s=solve_time_s,
+        n_facilities_open=len(open_facilities),
+    )
 
 
 def run(save: bool = True) -> SolveResult:

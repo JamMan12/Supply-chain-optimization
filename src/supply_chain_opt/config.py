@@ -37,7 +37,7 @@ class Settings:
     cflp_cost_per_km: float = 1.0
 
     # Solver engine
-    cflp_solver_backend: str = "CBC"
+    cflp_solver_backend: str = "HIGHS"
     cflp_solver_time_limit_s: int = 60
 
     # Output
