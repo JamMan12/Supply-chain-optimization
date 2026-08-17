@@ -52,8 +52,37 @@ Findings from `notebooks/01_eda.ipynb` that directly affect preprocessing and mo
 | `Order Item Discount Rate` | numeric |
 | `order_month` | numeric (derived from `order date (DateOrders)`) |
 | `order_quarter` | numeric (derived from `order date (DateOrders)`) |
+| `route_historical_delay_rate` | numeric (derived, leakage-safe — see below) |
 
 Target: `Late_delivery_risk` (binary, 55% positive — mild imbalance, no resampling needed).
+
+### `route_historical_delay_rate` — construction and leakage safety
+
+Lane = `(Market, Order Region)`. Deliberately **not** tied to the Phase 1/3 k-means
+facility clusters — this feature describes the shipment (market + destination region),
+not which candidate facility might serve it, so it stays valid regardless of how Phase 1
+re-clusters facilities. One consequence worth remembering going into Phase 3: since no
+feature encodes facility identity, `P(delay_ij)` predictions currently vary by
+destination region but not by which facility `i` serves it — risk-adjustment differentiates
+by *lane destination*, not by *facility choice*, for a given region.
+
+Computed in `preprocessor.add_route_historical_delay_rate`, called from `clean()` before
+`order date (DateOrders)` is dropped:
+
+1. Sort all rows by `order date (DateOrders)`.
+2. For each row, take only shipments on the same lane that occurred **strictly earlier**
+   in time — never the row's own label, never a future shipment.
+3. Bayesian-smooth the lane's raw prior rate toward a dataset-wide rate, weighted by
+   `route_history_smoothing_k` (`config.py`, default 20) vs. how many prior shipments the
+   lane has — new/thin lanes lean on the global rate, established lanes trust their own
+   history.
+4. The smoothing anchor (dataset-wide rate) is *also* point-in-time (expanding, prior-only)
+   rather than a static full-dataset mean, so it can't leak future information either, just
+   more diffusely than the per-lane version would.
+
+This is safe under the current random train/test split because the leakage rule is
+per-row-in-time, not per-split: each row only ever looks at its own strictly-earlier
+history regardless of which partition it lands in.
 
 ## CFLP Inputs (Phases 1 & 3)
 
