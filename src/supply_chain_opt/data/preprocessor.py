@@ -5,7 +5,6 @@ _SRC = Path(__file__).resolve().parent.parent.parent
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
-import numpy as np
 import pandas as pd
 
 from supply_chain_opt.config import settings
@@ -76,44 +75,9 @@ ML_FEATURES = [
     "Order Item Discount Rate",
     "order_month",
     "order_quarter",
-    "route_historical_delay_rate",
 ]
 
 TARGET = "Late_delivery_risk"
-
-# Lane definition for the historical delay-rate feature. Deliberately independent of
-# the CFLP's k-means facility clusters (Phase 1/3) — this describes the shipment
-# itself, not which candidate facility might serve it. See data/README.md.
-_ROUTE_GROUP_COLS = ["Market", "Order Region"]
-
-
-def add_route_historical_delay_rate(
-    df: pd.DataFrame, smoothing_k: float = settings.route_history_smoothing_k
-) -> pd.DataFrame:
-    """Point-in-time, leakage-safe historical delay rate per (Market, Order Region) lane.
-
-    Sorts by order date and gives each row the delay rate computed from only
-    strictly earlier shipments on the same lane, Bayesian-smoothed toward an
-    equally point-in-time dataset-wide rate. No row is influenced by its own
-    label or by a shipment that hadn't happened yet. Requires `_order_date` and
-    TARGET to still be present in `df`.
-    """
-    df = df.sort_values("_order_date", kind="stable").reset_index(drop=True)
-    target = df[TARGET].astype(float)
-
-    global_prior_count = pd.Series(np.arange(len(df)), index=df.index, dtype=float)
-    global_prior_late = target.cumsum() - target
-    global_rate = (global_prior_late / global_prior_count.replace(0, np.nan)).fillna(0.5)
-
-    grouped = df.groupby(_ROUTE_GROUP_COLS)[TARGET]
-    route_prior_count = grouped.cumcount().astype(float)
-    route_prior_late = grouped.cumsum() - target
-
-    df["route_historical_delay_rate"] = (route_prior_late + smoothing_k * global_rate) / (
-        route_prior_count + smoothing_k
-    )
-
-    return df
 
 
 def clean(df: pd.DataFrame) -> pd.DataFrame:
@@ -124,11 +88,8 @@ def clean(df: pd.DataFrame) -> pd.DataFrame:
     dates = pd.to_datetime(df["order date (DateOrders)"], format="%m/%d/%Y %H:%M")
     df["order_month"] = dates.dt.month
     df["order_quarter"] = dates.dt.quarter
-    df["_order_date"] = dates
 
-    df = add_route_historical_delay_rate(df)
-
-    to_drop = _LEAKAGE_COLS + _DROP_COLS + ["order date (DateOrders)", "_order_date"]
+    to_drop = _LEAKAGE_COLS + _DROP_COLS + ["order date (DateOrders)"]
     df = df.drop(columns=[c for c in to_drop if c in df.columns])
 
     df["Order Item Discount Rate"] = df["Order Item Discount Rate"].round(2)

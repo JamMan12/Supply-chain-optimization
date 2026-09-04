@@ -1,7 +1,6 @@
 pandas
 scikit-learn
 xgboost
-lightgbm
 pulp
 highspy
 streamlit
